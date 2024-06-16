@@ -39,4 +39,5 @@ int main()
 			}
 		if(c=='q')break;
 	}
+	printf("test123");
 	return 0;}
