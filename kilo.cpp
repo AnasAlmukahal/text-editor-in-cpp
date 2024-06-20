@@ -15,6 +15,8 @@ void killswitch(const char *s){
 	exit(1);
 }
 struct editorConfig{
+	int screenrows;
+	int screencols;
 	struct termios orig_termios;
 };
 struct editorConfig E;
@@ -64,7 +66,7 @@ void editorProcessKeypress(){
 	}
 }
 void editorDrawRows(){
-	for(int i=0;i<24;i++)
+	for(int i=0;i<E.screenrows;i++)
 		write(STDOUT_FILENO,"~/r/n",3);
 }
 void editorRefreshScreen(){
@@ -73,9 +75,14 @@ void editorRefreshScreen(){
 	editorDrawRows();
 	write(STDOUT_FILENO,"x1b[H",3);
 }
+void initEditor(){
+	if(getWindowSize(&E.screenrows, &E.screencols)==-1)
+		killswitch("getWindowSize");
+}
 int main()
 {
 	RawmodeEnable();
+	initEditor();
 	while(1){
 		editorRefreshScreen();
 		editorProcessKeypress();
