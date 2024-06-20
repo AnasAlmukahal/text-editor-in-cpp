@@ -5,6 +5,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <string.h>
 
 /*** defines ***/
 
@@ -22,7 +23,7 @@ struct editorConfig E;
 
 /*** terminal ***/
 
-void die(const char *s) {
+void killswitch(const char *s) {
 	  write(STDOUT_FILENO, "\x1b[2J", 4);
 	    write(STDOUT_FILENO, "\x1b[H", 3);
 
@@ -32,11 +33,11 @@ void die(const char *s) {
 
 void disableRawMode() {
 	  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
-		      die("tcsetattr");
+		      killswitch("tcsetattr");
 }
 
 void enableRawMode() {
-	  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
+	  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) killswitch("tcgetattr");
 	    atexit(disableRawMode);
 
 	      struct termios raw = E.orig_termios;
@@ -47,14 +48,14 @@ void enableRawMode() {
 		        raw.c_cc[VMIN] = 0;
 			  raw.c_cc[VTIME] = 1;
 
-			    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
+			    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) killswitch("tcsetattr");
 }
 
 char editorReadKey() {
 	  int nread;
 	    char c;
 	      while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-		          if (nread == -1 && errno != EAGAIN) die("read");
+		          if (nread == -1 && errno != EAGAIN) killswitch("read");
 			    }
 	        return c;
 }
@@ -86,26 +87,44 @@ int getWindowSize(int *rows, int *cols) {
 					      }
 }
 
+/***buffer ***/
+struct abuf{
+	char *b;
+	int len;
+};
+#define ABUF_INIT {NULL,0}
+void abAppend(struct abuf *ab, const char*s, int len){
+	char *newbuf=static_cast<char*>(realloc(ab->b,ab->len+len));
+	if(newbuf==NULL)return;
+	memcpy(&newbuf[ab->len],s,len);
+	ab->b=newbuf;
+	ab->len+=len;
+}
+void abFree(struct abuf*ab){
+	free(ab->b);
+}
 /*** output ***/
 
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
 	  int y;
 	    for (y = 0; y < E.screenrows; y++) {
-		        write(STDOUT_FILENO, "~", 1);
+		        abAppend(ab,"~",1);
 			if(y<E.screenrows -1){
-				write(STDOUT_FILENO,"\r\n",2);
+				abAppend(ab,"\r\n",2);
 			}
 	    }
 			  }
 
 
 void editorRefreshScreen() {
-	  write(STDOUT_FILENO, "\x1b[2J", 4);
-	    write(STDOUT_FILENO, "\x1b[H", 3);
+	  struct abuf ab=ABUF_INIT;
+	  abAppend(&ab,"\x1b[2J",4);
+	  abAppend(&ab,"\x1b[H",3);
 
-	      editorDrawRows();
-
-	        write(STDOUT_FILENO, "\x1b[H", 3);
+	      editorDrawRows(&ab);
+	      abAppend(&ab,"\x1b[H",3);
+	        write(STDOUT_FILENO, ab.b, ab.len);
+		abFree(&ab);
 }
 
 /*** input ***/
@@ -125,7 +144,7 @@ void editorProcessKeypress() {
 /*** init ***/
 
 void initEditor() {
-	  if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+	  if (getWindowSize(&E.screenrows, &E.screencols) == -1) killswitch("getWindowSize");
 }
 
 int main() {
