@@ -10,6 +10,17 @@
 /*** defines ***/
 
 #define CTRL_KEY(k) ((k) & 0x1f)
+enum editorkey{
+	Arrow_L=1000,
+	Arrow_R,
+	Arrow_U,
+	Arrow_D,
+	Delete_key,
+	Home_key,
+	End_key,
+	Page_U,
+	Page_D
+};
 
 /*** data ***/
 
@@ -52,13 +63,49 @@ void enableRawMode() {
 			    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) killswitch("tcsetattr");
 }
 
-char editorReadKey() {
+int editorReadKey() {
 	  int nread;
 	    char c;
 	      while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
 		          if (nread == -1 && errno != EAGAIN) killswitch("read");
 			    }
-	        return c;
+	      if(c=='\x1b'){
+		      char seq[3];
+		      if(read(STDIN_FILENO,&seq[0],1)!=1)return '\x1b';
+		      if(read(STDIN_FILENO,&seq[1],1)!=1)return '\x1b';
+		      if(seq[0]=='['){
+			      if(seq[1]>='0'&&seq[1]<='9'){
+				      if(seq[2]=='~'){
+				      switch(seq[1]){
+					      case'1':return Home_key;
+					      case'3':return Delete_key;
+					      case'4':return End_key;
+					      case'5':return Page_U;
+					      case'6':return Page_D;
+					      case'7':return Home_key;
+					      case'8':return End_key;
+				      }
+			      }
+			      }else{
+			      switch(seq[1]){
+				      case'A':return Arrow_U;
+				      case 'B':return Arrow_D;
+				      case'C':return Arrow_R;
+				      case 'D':return Arrow_L;
+				      case'H':return Home_key;
+				      case'F':return End_key;
+			      }
+		      }
+		      }else if(seq[0]=='o'){
+			      switch(seq[1]){
+				      case'H':return Home_key;
+				      case'F':return End_key;
+			      }
+		      }
+		      return '\x1b';
+
+	      }else{return c;
+	      }
 }
 int getCursorPosition(int *rows, int *cols){
 	char buf[32];
@@ -133,24 +180,28 @@ void editorRefreshScreen() {
 }
 
 /*** input ***/
-void editorMoveCursor(char key){
+void editorMoveCursor(int key){
 	switch(key){
-		case 'a':
-			E.cx--;
+		case Arrow_L:
+			if(E.cx!=0){
+			E.cx--;}
 			break;
-		case 'w':
-			E.cy--;
+		case Arrow_U:
+			if(E.cy!=0){
+			E.cy--;}
 			break;
-		case 's':
-			E.cy++;
+		case Arrow_D:
+			if(E.cy!=E.screenrows-1){
+			E.cy++;}
 			break;
-		case 'd':
-			E.cx++;
+		case Arrow_R:
+			if(E.cx!=E.screencols-1){
+			E.cx++;}
 			break;
 	}
 }
 void editorProcessKeypress() {
-	  char c = editorReadKey();
+	  int c = editorReadKey();
 
 	    switch (c) {
 		        case CTRL_KEY('q'):
@@ -158,10 +209,23 @@ void editorProcessKeypress() {
 				            write(STDOUT_FILENO, "\x1b[H", 3);
 					          exit(0);
 						        break;
-			case 'w':
-			case 's':
-			case 'a':
-			case 'd':
+			case Home_key:
+							E.cx=0;
+							break;
+			case End_key:
+							E.cx=E.screencols-1;
+							break;
+			case Page_U:
+			case Page_D:{
+					    int time=E.screenrows;
+					    while(time--)
+						    editorMoveCursor(c==Page_U?Arrow_U:Arrow_D);
+				    }
+				    break;
+			case Arrow_U:
+			case Arrow_D:
+			case Arrow_L:
+			case Arrow_R:
 	   
 							editorMoveCursor(c);
 	  
