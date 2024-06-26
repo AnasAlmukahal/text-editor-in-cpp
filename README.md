@@ -1,1 +1,1 @@
-using c++ to write a text editor in bash/WSL(the rep. didnt let me put the ++ in there for some reason.)
+unfortunately, i couldnt continue with this project due to issues with memory management, i tried fixing it for days(which is why ive been doing 1 commit a day for a while) but nothing worked, i gave the file to a friend of mine who knows about this stuff way more than i do and he also couldnt figure it out, so I'm gonna have to start over again at another day.
