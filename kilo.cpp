@@ -67,6 +67,8 @@ struct editorConfig {
 editorConfig E;
 /** prototype**/
 void editorStatusMessage(const char*fmt,...);
+void editorRefreshScreen();
+char *editorPrompt(char* prompt);
 /*** terminal ***/
 
 void killswitch(const char *s) {
@@ -211,10 +213,9 @@ void editorUpdateRow(erow *row) {
   row->render[idx] = '\0';
   row->rsize = idx;
 }
-
-void editorAppendRow(const char *s, size_t len) {
-  E.row.push_back(erow());
-  int at = E.numrows;
+void editorInsertRow(int at,const char *s, size_t len) {
+  if(at<0 || at>E.numrows) return;
+  E.row.insert(E.row.begin()+at,erow());
   E.row[at].size = len;
   E.row[at].chars = std::string(s, len);
   E.row[at].rsize = 0;
@@ -243,13 +244,28 @@ void editorRowInsert(erow *row,int at,int x){
 /** editor operations**/
 void editorInsertChar(int c){
   if(E.cy==E.numrows){
-    editorAppendRow("",0);
+    editorInsertRow(E.numrows,"",0);
   }
   editorRowInsert(&E.row[E.cy],E.cx,c);
   E.cx++;
 }
-void editorRowAppendString(erow *row, char *s, size_t len){
-  row->chars.append(s,len);
+void editorInsertNewline(){
+  if(E.cx==0){
+    editorInsertRow(E.cy,"",0);
+
+  }else{
+    erow *row=&E.row[E.cy];
+    editorInsertRow(E.cy+1,&row->chars[E.cx],row->size-E.cx);
+    row=&E.row[E.cy];
+    row->size=E.cx;
+    row->chars[row->size]='\0';
+    editorUpdateRow(row);
+  }
+  E.cy++;
+  E.cx=0;
+}
+void editorRowAppendString(erow *row, const std::string &s, size_t len){
+  row->chars.append(s,0,len);
   row->size=row->chars.size();
   editorUpdateRow(row);
   E.dirty++;
@@ -272,7 +288,7 @@ void editorDelChar(){
   E.cx=E.row[E.cy-1].size;
   editorRowAppendString(&E.row[E.cy-1],row->chars,row->size);
   editorDelrow(E.cy);
-  E.cy--;
+  E.cy--;}
 }
 /*** file i/o ***/
 char* editorRowsToString(int *buflen){
@@ -303,14 +319,19 @@ void editorOpen(const char *filename) {
   while ((linelen = getline(&line, &linecap, fp)) != -1) {
     while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
       linelen--;
-    editorAppendRow(line, linelen);
+    editorInsertRow(E.numrows ,line, linelen);
   }
   free(line);
   fclose(fp);
   E.dirty=0;
 }
 void editorSave(){
-  if(E.filename==NULL)return;//if its a new file we wont do anything
+  if(E.filename==NULL)
+  E.filename=editorPrompt("save as: %s (ESC to cancel)");
+  if(E.filename==NULL){
+    editorStatusMessage("save aborted");
+    return;
+    }
   int len;
   char *buf=editorRowsToString(&len);
   int fd=open(E.filename,O_RDWR |O_CREAT,0644);
@@ -475,7 +496,36 @@ void editorStatusMessage(const char* fmt,...){
 }
 
 /*** input ***/
+char* editorPrompt(char*prompt) {
+    size_t bufsize = 128;
+    char* buf= (char*)malloc(bufsize); // Initialize buf with 128 characters of '\0'
+    size_t buflen = 0;
+    buf[0] = '\0';
 
+    while (true) {
+        editorStatusMessage(prompt,buf);
+        editorRefreshScreen();
+        int c = editorReadKey();
+        if(c==DEL_KEY||c==CTRL_KEY('h')||c==BACKSPACE){
+          if(buflen!=0)buf[--buflen]='\0';
+        }else if (c == '\x1b') {
+            editorStatusMessage("");
+            free(buf);
+        } else if (c == '\r') {
+            if (buflen != 0) {
+                editorStatusMessage("");
+                return buf;
+            }
+        } else if (!iscntrl(c) && c < 128) {
+            if (buflen == bufsize - 1) {
+                bufsize *= 2;
+                buf=(char*)realloc(buf,bufsize); // Resize buf if only needed
+            }
+            buf[buflen++] = c;
+            buf[buflen] = '\0';
+        }
+    }
+}
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? nullptr : &E.row[E.cy];
   switch (key) {
@@ -519,6 +569,7 @@ void editorProcessKeypress() {
 
   switch (c) {
     case '\r':
+    editorInsertNewline();
       break;
     case CTRL_KEY('q'):
     if(E.dirty&&quit_times>0){
