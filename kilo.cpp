@@ -40,8 +40,8 @@ enum editorKey {
 };
 enum editorHighlight{
   HL_NORMAL=0,//every other value
-  HL_NUMBER//every character that's part of a number will have that
-
+  HL_NUMBER,//every character that's part of a number will have that
+  HL_MATCH
 };
 
 /*** data ***/
@@ -187,20 +187,31 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 /** syntax highlighting **/
+int is_separator(int c){
+  return isspace(c)||c=='\0'||strchr(",.()+-/*=~<>[];",c)!=NULL;
+}
 void editorUpdateSyntax(erow *row){
   row->hl=(unsigned char*)realloc(row->hl,row->rsize);//size of hl array= size of render array, so we use rsize for hl.
   memset(row->hl,HL_NORMAL,row->rsize);//set all characters to HL_NORMAL by default before loop
-  int i;
-  for(i=0;i<row->rsize;i++){
-    if(isdigit(row->render[i])){
+  int prev_sep=1;//consider beggining of line to be a separator
+  int i=0;
+  while(i<row->rsize){//changed to while to consume multiple characters for each iteration
+    char c=row->render[i];
+    unsigned char prev_hl=(i>0)?row->hl[i-1]:HL_NORMAL;
+    if((isdigit(c)&&(prev_sep||prev_hl==HL_NUMBER))||(c=='.'&&prev_hl==HL_NUMBER)){
       row->hl[i]=HL_NUMBER;
+      i++;
+      prev_sep=0;
+      continue;
     }
+    prev_sep=is_separator(c);
+    i++;
   }
-
 }
 int editorSyntaxToColor(int hl){
   switch(hl){
     case HL_NUMBER: return 31;//31: foreground red
+    case HL_MATCH: return 34;//34: blue
     default: return 37;//37: foreground white
   }
 }
@@ -394,6 +405,13 @@ void editorSave(){
 void editorFindCallBack(char* query, int key){
   static int last_match=-1;
   static int direction=1;
+  static int saved_hl_line;
+  static char *saved_hl=NULL;
+  if(saved_hl){
+    memcpy(E.row[saved_hl_line].hl,saved_hl,E.row[saved_hl_line].rsize);
+    free(saved_hl);
+    saved_hl=NULL;
+  }
   if(key=='\r'|| key=='\x1b'){
     last_match=-1;
     direction=1;
@@ -420,6 +438,9 @@ void editorFindCallBack(char* query, int key){
       E.cy=current;
       E.cx=editorRowRxToCx(row,match-row->render.c_str());
       E.rowoff=E.numrows;
+      saved_hl_line=current;
+      saved_hl=(char*)malloc(row->size);
+      memset(&row->hl[match - row->render.c_str()],HL_MATCH,strlen(query));
       break;
     }
   }
