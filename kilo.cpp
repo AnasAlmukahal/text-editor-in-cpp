@@ -40,7 +40,7 @@ enum editorKey {
   PAGE_DOWN
 };
 enum editorHighlight{
-  HL_NORMAL=0,//every other value
+  HL_NORMAL=0,
   HL_COMMENT,
   HL_STRING,
   HL_NUMBER,//every character that's part of a number will have that
@@ -51,7 +51,7 @@ enum editorHighlight{
 /*** data ***/
 struct editorSyntax{
   char *filetype;
-  char **filematch;//array of strings
+  char **filematch;//array of file extensions
   char *singleline_comment_start;
   int flags;//bit field, will contain flag for highlighting numbers or strings
 
@@ -83,16 +83,18 @@ struct editorConfig {
 
 editorConfig E;
 /** filetypes **/
-char *C_HL_extensions[]={".c",".h", ".cpp",NULL};
+#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))//store length of HLDB array
+char* C_HL_extensions[]={".c",".h", ".cpp",NULL};
 struct editorSyntax HLDB[]={
-  {"c",
-  C_HL_extensions,
-  "//",
-  HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
+  {
+    "c",
+    C_HL_extensions,
+    "//",
+    HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
 };
 //HLDB: Highlight DataBase
-#define HLDB_ENTRIES (sizeof(HLDB)/sizeof(HLDB[0]))//store length of HLDB array
+
 /** prototype**/
 void editorStatusMessage(const char*fmt,...);
 void editorRefreshScreen();
@@ -265,7 +267,7 @@ void editorUpdateSyntax(erow *row){
 }
 int editorSyntaxToColor(int hl){
   switch(hl){
-    case HL_COMMENT: return 36;//36: magenta
+    case HL_COMMENT: return 36;//36: cyan
     case HL_STRING: return 35;//35: magenta
     case HL_NUMBER: return 31;//31: foreground red
     case HL_MATCH: return 34;//34: blue
