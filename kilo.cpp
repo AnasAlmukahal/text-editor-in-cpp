@@ -41,6 +41,7 @@ enum editorKey {
 };
 enum editorHighlight{
   HL_NORMAL=0,//every other value
+  HL_COMMENT,
   HL_STRING,
   HL_NUMBER,//every character that's part of a number will have that
   HL_MATCH
@@ -51,6 +52,7 @@ enum editorHighlight{
 struct editorSyntax{
   char *filetype;
   char **filematch;//array of strings
+  char *singleline_comment_start;
   int flags;//bit field, will contain flag for highlighting numbers or strings
 
 };
@@ -85,6 +87,7 @@ char *C_HL_extensions[]={".c",".h", ".cpp",NULL};
 struct editorSyntax HLDB[]={
   {"c",
   C_HL_extensions,
+  "//",
   HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
 };
@@ -213,12 +216,20 @@ void editorUpdateSyntax(erow *row){
   row->hl=(unsigned char*)realloc(row->hl,row->rsize);//size of hl array= size of render array, so we use rsize for hl.
   memset(row->hl,HL_NORMAL,row->rsize);//set all characters to HL_NORMAL by default before loop
   if(E.syntax==NULL)return;
+  char *scs=E.syntax->singleline_comment_start;
+  int scs_len=scs?strlen(scs):0;
   int prev_sep=1;//consider beggining of line to be a separator
   int in_string = 0;
   int i=0;
   while(i<row->rsize){//changed to while to consume multiple characters for each iteration
     char c=row->render[i];
     unsigned char prev_hl=(i>0)?row->hl[i-1]:HL_NORMAL;
+    if(scs_len && !in_string){
+      if(!strncmp(&row->render[i],scs,scs_len)){
+        memset(&row->hl[i],HL_COMMENT,row->rsize-i);
+        break;
+      }
+    }
     if(E.syntax->flags & HL_HIGHLIGHT_STRINGS){
       if(in_string){
         row->hl[i]=HL_STRING;
@@ -254,6 +265,7 @@ void editorUpdateSyntax(erow *row){
 }
 int editorSyntaxToColor(int hl){
   switch(hl){
+    case HL_COMMENT: return 36;//36: magenta
     case HL_STRING: return 35;//35: magenta
     case HL_NUMBER: return 31;//31: foreground red
     case HL_MATCH: return 34;//34: blue
