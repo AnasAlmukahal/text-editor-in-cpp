@@ -26,6 +26,7 @@
 #define KILO_QUIT_TIMES 3
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+
 enum editorKey {
   BACKSPACE = 127,
   ARROW_LEFT = 1000,
@@ -43,9 +44,14 @@ enum editorHighlight{
   HL_NUMBER,//every character that's part of a number will have that
   HL_MATCH
 };
-
+#define HL_HIGHLIGHT_NUMBERS (1 << 0)
 /*** data ***/
+struct editorSyntax{
+  char *filetype;
+  char **filematch;//array of strings
+  int flags;//bit field, will contain flag for highlighting numbers or strings
 
+};
 struct erow {
   int size;
   int rsize; // render size
@@ -67,10 +73,21 @@ struct editorConfig {
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
+  struct editorSyntax *syntax;
   struct termios orig_termios;
 };
 
 editorConfig E;
+/** filetypes **/
+char *C_HL_extensions[]={".c",".h", ".cpp",NULL};
+struct editorSyntax HLDB[]={
+  {"c",
+  C_HL_extensions,
+  HL_HIGHLIGHT_NUMBERS
+  },
+};
+//HLDB: Highlight DataBase
+#define HLDB_ENTRIES (sizeof(HLDB)/sizeof(HLDB[0]))//store length of HLDB array
 /** prototype**/
 void editorStatusMessage(const char*fmt,...);
 void editorRefreshScreen();
@@ -193,16 +210,19 @@ int is_separator(int c){
 void editorUpdateSyntax(erow *row){
   row->hl=(unsigned char*)realloc(row->hl,row->rsize);//size of hl array= size of render array, so we use rsize for hl.
   memset(row->hl,HL_NORMAL,row->rsize);//set all characters to HL_NORMAL by default before loop
+  if(E.syntax==NULL)return;
   int prev_sep=1;//consider beggining of line to be a separator
   int i=0;
   while(i<row->rsize){//changed to while to consume multiple characters for each iteration
     char c=row->render[i];
     unsigned char prev_hl=(i>0)?row->hl[i-1]:HL_NORMAL;
+    if(E.syntax->flags & HL_HIGHLIGHT_NUMBERS){
     if((isdigit(c)&&(prev_sep||prev_hl==HL_NUMBER))||(c=='.'&&prev_hl==HL_NUMBER)){
       row->hl[i]=HL_NUMBER;
       i++;
       prev_sep=0;
       continue;
+    }
     }
     prev_sep=is_separator(c);
     i++;
@@ -213,6 +233,28 @@ int editorSyntaxToColor(int hl){
     case HL_NUMBER: return 31;//31: foreground red
     case HL_MATCH: return 34;//34: blue
     default: return 37;//37: foreground white
+  }
+}
+void editorSelectSyntaxHighlight(){
+  E.syntax=NULL;
+  if(E.filename==NULL) return;
+  char *ext=strrchr(E.filename, '.');
+  for(unsigned int i =0;i<HLDB_ENTRIES;i++){
+    struct editorSyntax *s=&HLDB[i];
+    unsigned j=0;
+    while(s->filematch[j]){
+      int is_ext=(s->filematch[j][0]=='.');
+      if((is_ext&&ext&&!strcmp(ext,s->filematch[j]))||
+      (!is_ext&&strstr(E.filename,s->filematch[j]))){
+        E.syntax=s;
+        int filerow;
+        for(filerow=0;filerow< E.numrows;filerow++){
+          editorUpdateSyntax(&E.row[filerow]);
+        }
+        return;
+      }
+      j++;
+    }
   }
 }
 /*** row operations ***/
@@ -359,6 +401,7 @@ char* editorRowsToString(int *buflen){
 void editorOpen(const char *filename) {
   free(E.filename);
   E.filename=strdup(filename);
+  editorSelectSyntaxHighlight();
   FILE *fp = fopen(filename, "r");
   if (!fp) killswitch("fopen");
 
@@ -375,12 +418,14 @@ void editorOpen(const char *filename) {
   E.dirty=0;
 }
 void editorSave(){
-  if(E.filename==NULL)
-  E.filename=editorPrompt("save as: %s (ESC to cancel)",NULL);
   if(E.filename==NULL){
-    editorStatusMessage("save aborted");
-    return;
+    E.filename=editorPrompt("save as: %s (ESC to cancel)",NULL);
+    if(E.filename==NULL){
+      editorStatusMessage("save aborted");
+      return;
     }
+    editorSelectSyntaxHighlight();
+  }
   int len;
   char *buf=editorRowsToString(&len);
   int fd=open(E.filename,O_RDWR |O_CREAT,0644);
@@ -572,8 +617,8 @@ void editorStatusBar(struct abuf *ab){
   int len=snprintf(status,sizeof(status),"%.20s- %d lines %s",
   E.filename?E.filename:"[No Name]",E.numrows,
   E.dirty ?"(modified)": "");
-  int rlen=snprintf(rstatus,sizeof(rstatus),"%d/%d",
-    E.cy+1,E.numrows);
+  int rlen=snprintf(rstatus,sizeof(rstatus),"%s | %d/%d",
+    E.syntax?E.syntax->filetype: "no ft",E.cy+1,E.numrows);
   if(len>E.screencols)len=E.screencols;//ensure bar doesnt exceed screen width
   abAppend(ab,status,len);
   while(len<E.screencols){
@@ -779,6 +824,7 @@ void initEditor() {
   E.filename=NULL;
   E.statusmsg[0]='\0';
   E.statusmsg_time=0;
+  E.syntax =NULL;//no filetype currently
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) killswitch("getWindowSize");
   E.screenrows-=2;
